@@ -1,0 +1,18 @@
+# Single application container - no database container.
+# The MCP server holds no persistent state of its own; all clinical data
+# lives in the FHIR server, and identity lives in Keycloak.
+services:
+  amakomaya-mcp:
+    build: .
+    container_name: amakomaya-mcp
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    env_file:
+      - .env
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
