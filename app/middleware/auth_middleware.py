@@ -13,9 +13,14 @@ Flow per request:
 
 If authentication fails, the request is rejected before it reaches any
 tool - tools can assume `get_current_session()` always succeeds.
+
+TODO(auth): AUTH_ENABLED=false (see app/config/settings.py) temporarily
+bypasses all of the above and serves every request as a fixed patient.
+Remove this bypass once the MCP protocol wiring is verified.
 """
 from __future__ import annotations
 
+import time
 from contextvars import ContextVar
 
 from starlette.middleware.base import BaseHTTPMiddleware
@@ -24,6 +29,7 @@ from starlette.responses import JSONResponse
 
 from app.auth.models import AuthSession
 from app.auth.session import session_store
+from app.config.settings import get_settings
 from app.utils.errors import AppError, UnauthorizedError
 from app.utils.logging import get_logger, new_request_id
 
@@ -42,9 +48,39 @@ def get_current_session() -> AuthSession:
     return session
 
 
+def _auth_disabled_session() -> AuthSession:
+    """
+    TODO(auth): remove once AUTH_ENABLED is restored to always-True.
+
+    Stands in for a real session while auth is switched off, so tools
+    (which all call get_current_session()) keep working against a single
+    fixed patient instead of raising UnauthorizedError on every call.
+    """
+    settings = get_settings()
+    return AuthSession(
+        session_id="auth-disabled",
+        patient_id=settings.auth_disabled_patient_id,
+        access_token=settings.fhir_service_token,
+        refresh_token=None,
+        expires_at=time.time() + settings.session_ttl_seconds,
+    )
+
+
 class AuthMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next):
         new_request_id()
+
+        settings = get_settings()
+
+        # TODO(auth): temporary bypass - see AUTH_ENABLED in
+        # app/config/settings.py. Skips Keycloak/session auth entirely and
+        # every request is served as settings.auth_disabled_patient_id.
+        if not settings.auth_enabled:
+            token = _current_session.set(_auth_disabled_session())
+            try:
+                return await call_next(request)
+            finally:
+                _current_session.reset(token)
 
         if request.url.path in _PUBLIC_PATHS:
             return await call_next(request)

@@ -34,6 +34,19 @@ class Settings(BaseSettings):
     session_secret_key: str = "change-me-in-production"
     session_ttl_seconds: int = 3600
 
+    # --- Auth toggle (temporary) ---
+    # TODO(auth): this flag exists only to let Claude Desktop / MCP
+    # Inspector connect and exercise the MCP protocol without Keycloak in
+    # the loop. Restore auth_enabled defaulting to True everywhere and
+    # remove AUTH_DISABLED_PATIENT_ID once the protocol wiring is verified.
+    # See app/middleware/auth_middleware.py for the bypass this gates.
+    auth_enabled: bool = True
+    # FHIR Patient resource id (not an email/username - no lookup happens
+    # in bypass mode) that every request is treated as, while auth is off.
+    auth_disabled_patient_id: str = ""
+    # Used only to decide whether AUTH_ENABLED=false is allowed to boot.
+    environment: str = "development"
+
     @property
     def keycloak_issuer(self) -> str:
         return f"{self.keycloak_url}/realms/{self.keycloak_realm}"

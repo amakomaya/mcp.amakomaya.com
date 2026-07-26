@@ -26,6 +26,7 @@ from app.auth.keycloak import (
     generate_pkce_challenge,
 )
 from app.auth.session import session_store
+from app.config.settings import get_settings
 from app.fhir.patient_resolver import resolve_patient_id
 from app.middleware.auth_middleware import AuthMiddleware
 from app.middleware.logging_middleware import LoggingMiddleware
@@ -35,6 +36,21 @@ from app.utils.logging import configure_logging, get_logger
 
 configure_logging()
 logger = get_logger("amakomaya.main")
+
+# TODO(auth): remove this startup guard along with AUTH_ENABLED once real
+# authentication is restored everywhere (see app/middleware/auth_middleware.py).
+_settings = get_settings()
+if not _settings.auth_enabled:
+    if _settings.environment.lower() == "production":
+        raise RuntimeError(
+            "AUTH_ENABLED=false is not allowed when ENVIRONMENT=production. "
+            "Refusing to start with authentication disabled in production."
+        )
+    logger.warning(
+        "AUTH DISABLED - every request is unauthenticated and served as "
+        "patient_id=%s. Do not deploy this outside local development.",
+        _settings.auth_disabled_patient_id or "<AUTH_DISABLED_PATIENT_ID unset>",
+    )
 
 # In-memory PKCE state store, keyed by the OAuth `state` parameter.
 # Short-lived: entries are consumed at the /auth/callback step.
