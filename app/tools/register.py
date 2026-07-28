@@ -15,7 +15,9 @@ from __future__ import annotations
 from typing import Any
 
 from mcp.server.fastmcp import FastMCP
+from mcp.server.transport_security import TransportSecuritySettings
 
+from app.config.settings import get_settings
 from app.services import (
     encounter_service,
     medication_service,
@@ -27,7 +29,32 @@ from app.services import (
 from app.utils.errors import AppError
 from app.utils.logging import log_tool_call
 
-mcp = FastMCP("amakomaya")
+_LOCAL_HOSTS = ["127.0.0.1:*", "localhost:*", "[::1]:*"]
+_LOCAL_ORIGINS = ["http://127.0.0.1:*", "http://localhost:*", "http://[::1]:*"]
+
+
+def _build_transport_security() -> TransportSecuritySettings:
+    """
+    The MCP SDK's DNS-rebinding protection rejects any Host/Origin header
+    not on an explicit allowlist. It auto-allows localhost, but a public
+    deployment needs its real hostname(s) added via MCP_ALLOWED_HOSTS -
+    otherwise every request 421s with "Invalid Host header".
+    """
+    extra_hosts = [h.strip() for h in get_settings().mcp_allowed_hosts.split(",") if h.strip()]
+    allowed_hosts = [*_LOCAL_HOSTS, *extra_hosts, *(f"{h}:*" for h in extra_hosts)]
+    allowed_origins = [
+        *_LOCAL_ORIGINS,
+        *(f"https://{h}" for h in extra_hosts),
+        *(f"http://{h}" for h in extra_hosts),
+    ]
+    return TransportSecuritySettings(
+        enable_dns_rebinding_protection=True,
+        allowed_hosts=allowed_hosts,
+        allowed_origins=allowed_origins,
+    )
+
+
+mcp = FastMCP("amakomaya", transport_security=_build_transport_security())
 
 
 async def _run(tool_name: str, coro):

@@ -30,6 +30,13 @@ class Settings(BaseSettings):
     port: int = 8000
     log_level: str = "INFO"
 
+    # Comma-separated public hostname(s) this server is reachable as
+    # (e.g. "mcp.amakomaya.com"), in addition to localhost/127.0.0.1/::1
+    # which are always allowed. Required for any non-local deployment: the
+    # MCP SDK's DNS-rebinding protection rejects the Host/Origin headers of
+    # any hostname not in this list with 421 Misdirected Request.
+    mcp_allowed_hosts: str = ""
+
 
 @lru_cache
 def get_settings() -> Settings:

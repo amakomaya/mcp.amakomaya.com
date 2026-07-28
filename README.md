@@ -79,6 +79,8 @@ FHIR_MAX_RETRIES=3
 FHIR_USERNAME=
 FHIR_PASSWORD=
 FHIR_TOKEN=
+
+MCP_ALLOWED_HOSTS=
 ```
 
 `FHIRClient` (`app/fhir/client.py`) picks the auth mode automatically:
@@ -86,6 +88,12 @@ FHIR_TOKEN=
 1. `FHIR_TOKEN` set → Bearer token auth.
 2. Otherwise, `FHIR_USERNAME` + `FHIR_PASSWORD` set → HTTP Basic auth.
 3. Otherwise → no authentication.
+
+`MCP_ALLOWED_HOSTS` is unrelated to FHIR auth - it's required for any
+deployment reachable by a hostname other than `localhost`/`127.0.0.1`. The
+MCP SDK rejects requests whose `Host` header isn't on an explicit
+allowlist (DNS-rebinding protection) with `421 Misdirected Request`. Set
+it to your public hostname, e.g. `MCP_ALLOWED_HOSTS=mcp.amakomaya.com`.
 
 ## Quick start
 
