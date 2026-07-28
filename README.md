@@ -1,43 +1,50 @@
 # Amakomaya MCP Server
 
-An MCP (Model Context Protocol) server that lets Claude Desktop, Claude
-Code, ChatGPT, Cursor, and other MCP clients securely access a patient's
-**own** clinical information from the Amakomaya FHIR server.
+An MCP (Model Context Protocol) server that connects Claude Desktop, Claude
+Code, ChatGPT, Cursor, and other MCP clients to a FHIR server over the
+FHIR REST API.
+
+## Milestone: FHIR connectivity, no authentication
+
+This build is a **temporary development milestone**. It intentionally has
+**no authentication or identity management** - no OAuth2, no OpenID
+Connect, no Keycloak, no PKCE, no JWT validation, no sessions, no login
+endpoints, no user identity resolution, no authorization middleware, no
+RBAC, no patient-ownership checks. Every tool takes an explicit FHIR
+resource id or patient id from the caller.
+
+The goal of this milestone is only to:
+
+1. Start successfully.
+2. Connect to the configured FHIR server.
+3. Read resources using the FHIR REST API.
+4. Return valid responses through MCP tools.
+5. Be easy to extend with real authentication later.
+
+**Do not deploy this build anywhere it would be reachable by untrusted
+clients or expose real patient data** - it has no access control of any
+kind.
 
 ## What this server does
 
-- Authenticates users via **Keycloak** (OAuth2 Authorization Code + PKCE).
-  No password ever touches this server.
-- Resolves the signed-in user to exactly one FHIR **Patient** record.
-- Exposes 9 simple MCP tools that always return **only that patient's own
-  data** - there is no parameter for requesting anyone else's records.
 - Talks to clinical data **only** through the FHIR REST API. No SQL, no
   ORM, no direct database access, no database container.
-
-## What this server does NOT do
-
-- It does not store any patient data itself.
-- It does not connect directly to any database.
-- It never exposes a raw FHIR Patient ID to the end user or MCP client.
-- It never logs access tokens, refresh tokens, or clinical content.
+- Automatically authenticates to the *FHIR server itself* (not the end
+  user) using whichever of Bearer token / Basic auth / no auth is
+  configured via environment variables.
+- Exposes 9 MCP tools for reading FHIR resources by id or search
+  parameters.
 
 ## Architecture
 
 ```
 Claude Desktop / Claude Code / ChatGPT / Cursor
-        │  MCP over Streamable HTTP (Bearer <session token>)
+        │  MCP over Streamable HTTP
         ▼
 Amakomaya MCP Server  (this repo)
-        │  OAuth2 Authorization Code + PKCE
+        │  HTTP(S), auto-selected auth: Bearer token > Basic auth > none
         ▼
-Keycloak  ──── issues signed JWT ────►  MCP Server validates
-                                          (issuer, audience, expiry, signature)
-        │  verified username/email
-        ▼
-FHIR REST API  ── Patient?identifier=<username> ──►  exactly one Patient
-        │
-        ▼
-All further reads automatically scoped to that Patient
+FHIR REST API
 ```
 
 ## Project structure
@@ -45,63 +52,82 @@ All further reads automatically scoped to that Patient
 ```
 amakomaya-mcp/
 ├── app/
-│   ├── auth/          Keycloak OAuth2/OIDC + JWT validation + sessions
-│   ├── fhir/           FHIR REST client + patient identity resolution
-│   ├── services/       One module per clinical domain (appointments, meds, ...)
-│   ├── tools/          MCP tool definitions (the 9 tools Claude calls)
-│   ├── middleware/      Auth + logging ASGI middleware
-│   ├── config/         Settings (env-driven)
-│   └── utils/           Errors + structured logging
+│   ├── config/          Settings (env-driven)
+│   ├── fhir/
+│   │   └── client.py     Reusable async FHIR REST client
+│   ├── services/         One module per FHIR resource type
+│   ├── tools/             MCP tool definitions
+│   ├── middleware/       Request logging ASGI middleware
+│   └── utils/             Errors + structured logging
 ├── tests/
-├── docs/
-├── main.py             FastAPI app: mounts MCP + OAuth endpoints
+├── main.py               FastAPI app: mounts the MCP server + /health
 ├── requirements.txt
 ├── Dockerfile
 ├── docker-compose.yml
 └── .env.example
 ```
 
+## Configuration
+
+All configuration is environment variables (see `.env.example`):
+
+```
+FHIR_BASE_URL=http://localhost:8080/fhir
+FHIR_TIMEOUT=30
+FHIR_MAX_RETRIES=3
+
+FHIR_USERNAME=
+FHIR_PASSWORD=
+FHIR_TOKEN=
+```
+
+`FHIRClient` (`app/fhir/client.py`) picks the auth mode automatically:
+
+1. `FHIR_TOKEN` set → Bearer token auth.
+2. Otherwise, `FHIR_USERNAME` + `FHIR_PASSWORD` set → HTTP Basic auth.
+3. Otherwise → no authentication.
+
 ## Quick start
 
 ```bash
 cp .env.example .env
-# edit .env with your Keycloak + FHIR details
+# edit .env with your FHIR server details
 docker compose up -d
 ```
 
-Then point an MCP client at `http://localhost:8000/mcp`, sign in via
-`http://localhost:8000/auth/login`, and use the returned `session_token`
-as the client's Bearer token.
+Or locally without Docker:
 
-See `docs/` for detailed guides:
+```bash
+pip install -r requirements.txt
+uvicorn main:app --host 0.0.0.0 --port 8000
+```
 
-- [Installation](docs/installation.md)
-- [Docker](docs/docker.md)
-- [Configuration](docs/configuration.md)
-- [Developer Guide](docs/developer_guide.md)
-- [Deployment](docs/deployment.md)
+Then point an MCP client at `http://localhost:8000/mcp`. No sign-in step
+is required in this build.
 
 ## MCP tools
 
 | Tool | Description |
 |---|---|
-| `get_my_profile` | Your own name, gender, birth date, phone |
-| `my_appointments` | Your own appointments |
-| `my_medications` | Your own medications |
-| `my_conditions` | Your own documented conditions |
-| `my_observations` | Your own recorded vitals/labs (as documented, not interpreted) |
-| `my_immunizations` | Your own immunization history |
-| `my_documents` | Your own clinical documents |
-| `my_clinical_summary` | A combined snapshot across the above |
-| `server_status` | Health check |
+| `server_status` | MCP server health + FHIR server connectivity + FHIR version |
+| `get_patient` | Retrieve a Patient resource by FHIR id |
+| `search_patients` | Search patients by family name, given name, identifier, or birth date |
+| `get_observation` | Retrieve an Observation by FHIR id |
+| `search_observations` | Search Observations for a patient FHIR id |
+| `get_encounter` | Retrieve an Encounter by FHIR id |
+| `search_encounters` | Search Encounters for a patient FHIR id |
+| `search_medications` | Search MedicationRequest resources for a patient FHIR id |
+| `raw_fhir` | Execute a raw GET request against any FHIR endpoint, for debugging |
 
-## Security notes
+## Testing
 
-- JWTs are validated for **signature** (against Keycloak's JWKS),
-  **issuer**, **audience**, and **expiration** on every request.
-- Only a service-account token is ever used for the one-time patient
-  lookup step; all clinical reads use the signed-in user's own token.
-- The FHIR Patient ID is stored **server-side only**, in an in-memory
-  session keyed by an opaque session token - it is never returned to the
-  client or accepted as an input parameter.
-- Run `pytest` before every deploy: `pytest -q`.
+```bash
+pytest -q
+```
+
+## Roadmap
+
+Authentication (Keycloak OAuth2/OIDC + PKCE, JWT validation, sessions,
+patient-identity resolution, authorization middleware, RBAC) is planned
+for a later milestone, once FHIR connectivity is verified end-to-end. It
+is out of scope for this build by design.

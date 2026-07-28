@@ -2,34 +2,32 @@
 MCP tool definitions.
 
 Every tool follows the same pattern:
-  1. Get the current authenticated session (patient_id + access_token).
-  2. Call the corresponding service.
-  3. Return a simple, friendly result - or a friendly error message.
+  1. Call the corresponding service, which talks to the FHIR server through
+     app.fhir.client.FHIRClient.
+  2. Return the result - or a friendly error message.
 
-Tools never accept a patient id or any identifier from the caller. The
-identity used is always the one resolved from the signed-in user's own
-session - there is no parameter that could be used to request someone
-else's data.
+NOTE: This build has no authentication or identity management (temporary
+development milestone - see README.md). Every tool that touches clinical
+data takes an explicit FHIR resource id or patient id from the caller.
 """
 from __future__ import annotations
 
+from typing import Any
+
 from mcp.server.fastmcp import FastMCP
 
-from app.middleware.auth_middleware import get_current_session
 from app.services import (
-    appointment_service,
-    condition_service,
-    document_service,
-    immunization_service,
+    encounter_service,
     medication_service,
     observation_service,
     patient_service,
-    summary_service,
+    raw_service,
+    status_service,
 )
 from app.utils.errors import AppError
 from app.utils.logging import log_tool_call
 
-mcp = FastMCP("amakomaya")
+mcp = FastMCP("amakomaya", streamable_http_path="/")
 
 
 async def _run(tool_name: str, coro):
@@ -42,96 +40,83 @@ async def _run(tool_name: str, coro):
 
 
 @mcp.tool()
-async def get_my_profile() -> dict:
-    """Get the signed-in user's own basic profile (name, gender, birth date, phone)."""
-    session = get_current_session()
-    return await _run(
-        "get_my_profile",
-        patient_service.get_profile(session.access_token, session.patient_id),
-    )
-
-
-@mcp.tool()
-async def my_appointments() -> dict:
-    """List the signed-in user's own appointments (past and upcoming)."""
-    session = get_current_session()
-    result = await _run(
-        "my_appointments",
-        appointment_service.list_appointments(session.access_token, session.patient_id),
-    )
-    return {"appointments": result} if isinstance(result, list) else result
-
-
-@mcp.tool()
-async def my_medications() -> dict:
-    """List the signed-in user's own medications."""
-    session = get_current_session()
-    result = await _run(
-        "my_medications",
-        medication_service.list_medications(session.access_token, session.patient_id),
-    )
-    return {"medications": result} if isinstance(result, list) else result
-
-
-@mcp.tool()
-async def my_conditions() -> dict:
-    """List the signed-in user's own documented health conditions."""
-    session = get_current_session()
-    result = await _run(
-        "my_conditions",
-        condition_service.list_conditions(session.access_token, session.patient_id),
-    )
-    return {"conditions": result} if isinstance(result, list) else result
-
-
-@mcp.tool()
-async def my_observations() -> dict:
-    """
-    List the signed-in user's own recorded observations (vitals / lab
-    results), as documented. This tool does not interpret or diagnose.
-    """
-    session = get_current_session()
-    result = await _run(
-        "my_observations",
-        observation_service.list_observations(session.access_token, session.patient_id),
-    )
-    return {"observations": result} if isinstance(result, list) else result
-
-
-@mcp.tool()
-async def my_immunizations() -> dict:
-    """List the signed-in user's own immunization history."""
-    session = get_current_session()
-    result = await _run(
-        "my_immunizations",
-        immunization_service.list_immunizations(session.access_token, session.patient_id),
-    )
-    return {"immunizations": result} if isinstance(result, list) else result
-
-
-@mcp.tool()
-async def my_documents() -> dict:
-    """List the signed-in user's own clinical documents (letters, summaries)."""
-    session = get_current_session()
-    result = await _run(
-        "my_documents",
-        document_service.list_documents(session.access_token, session.patient_id),
-    )
-    return {"documents": result} if isinstance(result, list) else result
-
-
-@mcp.tool()
-async def my_clinical_summary() -> dict:
-    """Get a combined snapshot: profile, upcoming appointments, active
-    medications and conditions, recent observations, and immunizations."""
-    session = get_current_session()
-    return await _run(
-        "my_clinical_summary",
-        summary_service.get_clinical_summary(session.access_token, session.patient_id),
-    )
-
-
-@mcp.tool()
 async def server_status() -> dict:
-    """Check whether the Amakomaya MCP server is running normally."""
-    return {"status": "ok", "service": "amakomaya-mcp"}
+    """Check MCP server health and FHIR server connectivity, including the FHIR version if available."""
+    return await _run("server_status", status_service.check_server_status())
+
+
+@mcp.tool()
+async def get_patient(patient_id: str) -> dict:
+    """Retrieve a Patient resource by its FHIR id."""
+    return await _run("get_patient", patient_service.get_patient(patient_id))
+
+
+@mcp.tool()
+async def search_patients(
+    family: str | None = None,
+    given: str | None = None,
+    identifier: str | None = None,
+    birthdate: str | None = None,
+    count: int = 20,
+) -> dict:
+    """Search for patients by family name, given name, identifier, or birth date (YYYY-MM-DD)."""
+    return await _run(
+        "search_patients",
+        patient_service.search_patients(
+            family=family,
+            given=given,
+            identifier=identifier,
+            birthdate=birthdate,
+            count=count,
+        ),
+    )
+
+
+@mcp.tool()
+async def get_observation(observation_id: str) -> dict:
+    """Retrieve an Observation resource by its FHIR id."""
+    return await _run("get_observation", observation_service.get_observation(observation_id))
+
+
+@mcp.tool()
+async def search_observations(patient_id: str, count: int = 20) -> dict:
+    """Search Observation resources for a given patient FHIR id."""
+    return await _run(
+        "search_observations",
+        observation_service.search_observations(patient_id, count=count),
+    )
+
+
+@mcp.tool()
+async def get_encounter(encounter_id: str) -> dict:
+    """Retrieve an Encounter resource by its FHIR id."""
+    return await _run("get_encounter", encounter_service.get_encounter(encounter_id))
+
+
+@mcp.tool()
+async def search_encounters(patient_id: str, count: int = 20) -> dict:
+    """Search Encounter resources for a given patient FHIR id."""
+    return await _run(
+        "search_encounters",
+        encounter_service.search_encounters(patient_id, count=count),
+    )
+
+
+@mcp.tool()
+async def search_medications(patient_id: str, count: int = 20) -> dict:
+    """Search MedicationRequest resources for a given patient FHIR id."""
+    return await _run(
+        "search_medications",
+        medication_service.search_medications(patient_id, count=count),
+    )
+
+
+@mcp.tool()
+async def raw_fhir(path: str, params: dict[str, Any] | None = None) -> dict:
+    """
+    Execute a raw GET request against any FHIR endpoint, for debugging.
+
+    `path` is relative to the configured FHIR base URL, e.g. "Patient" or
+    "Patient/123/_history". `params` are FHIR search/query parameters.
+    """
+    return await _run("raw_fhir", raw_service.execute_raw_get(path, params=params))

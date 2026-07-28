@@ -1,26 +1,15 @@
-"""Medication request data, scoped to the authenticated patient."""
+"""MedicationRequest resource lookups."""
 from __future__ import annotations
 
-from app.services.base import bundle_resources, make_client, patient_reference
+from typing import Any
+
+from app.fhir.client import get_fhir_client
+from app.services.base import bundle_summary
 
 
-async def list_medications(access_token: str, patient_id: str) -> list[dict]:
-    client = make_client(access_token)
-    bundle = await client.search(
+async def search_medications(patient_id: str, count: int = 20) -> dict[str, Any]:
+    bundle = await get_fhir_client().search(
         "MedicationRequest",
-        params={"patient": patient_reference(patient_id), "_sort": "-authoredon", "_count": 20},
+        params={"patient": patient_id, "_sort": "-authoredon", "_count": count},
     )
-
-    medications = []
-    for resource in bundle_resources(bundle):
-        med_text = (resource.get("medicationCodeableConcept") or {}).get("text")
-        dosage_instructions = resource.get("dosageInstruction", [])
-        dosage_text = dosage_instructions[0].get("text") if dosage_instructions else None
-
-        medications.append({
-            "medication": med_text,
-            "status": resource.get("status"),
-            "dosage": dosage_text,
-            "authored_on": resource.get("authoredOn"),
-        })
-    return medications
+    return bundle_summary(bundle)

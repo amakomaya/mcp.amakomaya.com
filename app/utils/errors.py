@@ -40,20 +40,6 @@ class TimeoutErrorApp(AppError):
     friendly_message = "The health records system is taking too long to respond. Please try again."
 
 
-class PatientNotFoundError(NotFoundError):
-    friendly_message = (
-        "We couldn't find a patient record linked to your account. "
-        "Please contact Amakomaya support."
-    )
-
-
-class PatientIdentityConflictError(ForbiddenError):
-    friendly_message = (
-        "Your account matches more than one patient record. "
-        "Please contact Amakomaya support to resolve this."
-    )
-
-
 class InternalError(AppError):
     status_code = 500
     friendly_message = "Something went wrong on our end. Please try again shortly."

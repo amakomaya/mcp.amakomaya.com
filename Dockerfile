@@ -2,8 +2,8 @@ FROM python:3.13-slim
 
 WORKDIR /app
 
-# System deps kept minimal on purpose - this image talks to Keycloak and
-# the FHIR server over HTTPS only, nothing else.
+# System deps kept minimal on purpose - this image talks to the FHIR
+# server over HTTP(S) only, nothing else.
 RUN apt-get update \
     && apt-get install -y --no-install-recommends curl \
     && rm -rf /var/lib/apt/lists/*

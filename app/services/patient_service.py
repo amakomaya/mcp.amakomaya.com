@@ -1,25 +1,33 @@
-"""Patient demographic / profile data."""
+"""Patient resource lookups."""
 from __future__ import annotations
 
-from app.services.base import make_client
+from typing import Any
+
+from app.fhir.client import get_fhir_client
+from app.services.base import bundle_summary
 
 
-async def get_profile(access_token: str, patient_id: str) -> dict:
-    client = make_client(access_token)
-    patient = await client.read("Patient", patient_id)
+async def get_patient(patient_id: str) -> dict[str, Any]:
+    return await get_fhir_client().read("Patient", patient_id)
 
-    name = patient.get("name", [{}])[0]
-    full_name = " ".join(filter(None, [
-        " ".join(name.get("given", [])),
-        name.get("family", ""),
-    ])).strip()
 
-    return {
-        "name": full_name or "Not on file",
-        "gender": patient.get("gender"),
-        "birth_date": patient.get("birthDate"),
-        "phone": next(
-            (t["value"] for t in patient.get("telecom", []) if t.get("system") == "phone"),
-            None,
-        ),
-    }
+async def search_patients(
+    *,
+    family: str | None = None,
+    given: str | None = None,
+    identifier: str | None = None,
+    birthdate: str | None = None,
+    count: int = 20,
+) -> dict[str, Any]:
+    params: dict[str, Any] = {"_count": count}
+    if family:
+        params["family"] = family
+    if given:
+        params["given"] = given
+    if identifier:
+        params["identifier"] = identifier
+    if birthdate:
+        params["birthdate"] = birthdate
+
+    bundle = await get_fhir_client().search("Patient", params=params)
+    return bundle_summary(bundle)

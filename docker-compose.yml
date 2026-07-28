@@ -1,6 +1,6 @@
 # Single application container - no database container.
 # The MCP server holds no persistent state of its own; all clinical data
-# lives in the FHIR server, and identity lives in Keycloak.
+# lives in the FHIR server. This build has no authentication.
 services:
   amakomaya-mcp:
     build: .
