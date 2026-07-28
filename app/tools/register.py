@@ -27,7 +27,7 @@ from app.services import (
 from app.utils.errors import AppError
 from app.utils.logging import log_tool_call
 
-mcp = FastMCP("amakomaya", streamable_http_path="/")
+mcp = FastMCP("amakomaya")
 
 
 async def _run(tool_name: str, coro):

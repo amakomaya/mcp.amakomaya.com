@@ -45,9 +45,17 @@ async def lifespan(app: FastAPI):
 app = FastAPI(title="Amakomaya MCP Server", lifespan=lifespan)
 app.add_middleware(LoggingMiddleware)
 
-app.mount("/mcp", mcp_app)
-
 
 @app.get("/health")
 async def health() -> dict:
     return {"status": "ok"}
+
+
+# mcp_app already serves the streamable HTTP transport at /mcp internally
+# (FastMCP's default streamable_http_path), so it is mounted at "/" here -
+# mounting it again at "/mcp" would require clients to hit /mcp/mcp, and
+# hitting exactly "/mcp" would trigger a trailing-slash redirect that
+# breaks behind reverse proxies that don't forward X-Forwarded-Proto.
+# The /health route above is registered first so it takes priority over
+# this catch-all mount.
+app.mount("/", mcp_app)

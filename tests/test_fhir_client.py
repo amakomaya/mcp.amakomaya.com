@@ -11,7 +11,9 @@ BASE_URL = "https://fhir.test/fhir"
 
 
 def _settings(**overrides) -> Settings:
-    return Settings(fhir_base_url=BASE_URL, fhir_max_retries=2, **overrides)
+    # _env_file=None: tests must be isolated from whatever the developer's
+    # local .env happens to contain (real FHIR credentials, etc).
+    return Settings(_env_file=None, fhir_base_url=BASE_URL, fhir_max_retries=2, **overrides)
 
 
 @pytest.mark.asyncio
